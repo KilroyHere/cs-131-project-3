@@ -19,7 +19,6 @@ class Interpreter(InterpreterBase):
     super().__init__(console_output, input)
 
     # Object Members
-    # self.in_lambda = False
     self.tokenizer = Tokenizer()
     self.scope = ScopeManager()
     self.functions = FunctionManager()
@@ -35,7 +34,7 @@ class Interpreter(InterpreterBase):
                               self.STRTOINT_DEF, self.INPUT_DEF}
   
     # Variable Types
-    self.types = {self.INT_DEF,self.STRING_DEF,self.BOOL_DEF, self.FUNC_DEF}
+    self.types = {self.INT_DEF,self.STRING_DEF,self.BOOL_DEF, self.FUNC_DEF, self.OBJECT_DEF}
 
     # Integer operators
     self.int_ops = {
@@ -163,9 +162,12 @@ class Interpreter(InterpreterBase):
     for var_name in var_names:
       # Check if var not in current scope already
       if(self.scope.check_in_local_scope(var_name)):
+        print(self.scope.function_scopes[-1])
         self.error(ErrorType.NAME_ERROR,"Duplicate variable definitions within the same block", self.instruction_poiner)
       else:
         match var_type:
+          case self.OBJECT_DEF:
+            self.scope.add_to_local_scope(var_name,({},var_type))
           case self.FUNC_DEF:
             # Storing for a function variable,func name, line of function def, passed parameters
             self.scope.add_to_local_scope(var_name,([None,-1,{}],var_type))
@@ -186,19 +188,32 @@ class Interpreter(InterpreterBase):
     # Evaluate expression
     evaluation_result = self.evaluate_expression(statement[2:])
     variable_name = statement[1]
-    # Check if variable in any scope
-    if(not self.scope.check_in_function_scope(variable_name)):
-      self.error(ErrorType.NAME_ERROR, "Variable not found", self.instruction_poiner)
     
-    # Get variable type from scope
-    index = self.scope.find_scope_num(variable_name)
-    variable_type = self.scope.get_variable(index,variable_name)[self.TYPE]
-    # Check type
-    if(variable_type != evaluation_result[self.TYPE]):
-      self.error(ErrorType.TYPE_ERROR, "Variable type is different than value assigned", self.instruction_poiner)
-    # Set variable
-    self.scope.set_variable(index,variable_name,evaluation_result)
-    self.scope.set_referenced(variable_name)
+
+    if('.' in variable_name):
+      object_name = variable_name.split('.')[0]
+      # Check if variable in any scope
+      if(not self.scope.check_in_function_scope(object_name)):
+        self.error(ErrorType.NAME_ERROR, "Variable not found", self.instruction_poiner)
+      index = self.scope.find_scope_num(variable_name.split('.')[0])
+      # Set variable
+      self.scope.set_variable(index,variable_name,evaluation_result)
+    else:
+      # Check if variable in any scope
+      if(not self.scope.check_in_function_scope(variable_name)):
+        self.error(ErrorType.NAME_ERROR, "Variable not found", self.instruction_poiner)
+      
+      # Get variable type from scope
+      index = self.scope.find_scope_num(variable_name)
+      variable_type = self.scope.get_variable(index,variable_name)[self.TYPE]
+      # Check type
+      if(variable_type != evaluation_result[self.TYPE]):
+        self.error(ErrorType.TYPE_ERROR, "Variable type is different than value assigned", self.instruction_poiner)
+      # Set variable
+      self.scope.set_variable(index,variable_name,evaluation_result)
+      self.scope.set_referenced(variable_name)
+      
+    
     self.instruction_poiner += 1
 
   def evaluate_lambda(self,statement):
@@ -209,11 +224,13 @@ class Interpreter(InterpreterBase):
     # Go to the line after end_lambda
     self.instruction_poiner = self.functions.find_endlambda(self.instruction_poiner)+1
 
+  # We reach here, only when executing a lambda function
   def evaluate_endlambda(self,statement):
-    self.scope.delete_current_scope()
-    self.instruction_poiner += 1
-
-    
+    required_return_type = self.functions.get_return_type(self.functions.get_current_function())
+    self.return_default_values(required_return_type)
+    self.instruction_poiner = self.functions.pop_stack()
+    self.scope.function_scopes.pop()
+  
 
 
   def evaluate_funccall(self, statement):
@@ -229,13 +246,15 @@ class Interpreter(InterpreterBase):
       self.execute_inbuilt_function(statement)
     else:
       # Sanity check for undefined functions
+      is_lambda = False
       if (not self.functions.function_present(function_name)):
         # Check in function variable
         if( self.scope.find_scope_num(function_name) != -1):
             index = self.scope.find_scope_num(function_name)
             function_def = self.scope.get_variable(index,function_name)
             function_name = function_def[self.VALUE][0]
-
+            if(len(function_def[self.VALUE][2]) > 0):
+              is_lambda = True
             # For undefined function names, there's a dummy variable
             if(function_name == None):
               self.instruction_poiner += 1
@@ -243,7 +262,6 @@ class Interpreter(InterpreterBase):
         else:
           self.error(
             ErrorType.NAME_ERROR, f"Function {function_name} not defined ", self.instruction_poiner)
-   
       # Passed parameters
       passed_parameter_names = statement[2:]
       passed_parameters = list(map(lambda parameter: self.parse_value_type(parameter),statement[2:]))
@@ -255,8 +273,8 @@ class Interpreter(InterpreterBase):
         self.error(ErrorType.NAME_ERROR,"Wrong number of parameters",self.instruction_poiner)
       
       # Adding new function_scope for function called
-      if(self.LAMBDA_DEF in function_name):
-        self.scope.function_scopes.append(function_def[self.VALUE][2])
+      if(is_lambda):
+        self.scope.function_scopes.append(copy.deepcopy(function_def[self.VALUE][2]))
       else:
         self.scope.function_scopes.append([{}])
       for index in range(len(passed_parameters)):
@@ -427,6 +445,10 @@ class Interpreter(InterpreterBase):
       self.scope.set_result(-2,(0,self.INT_DEF))
     elif (return_type == self.BOOL_DEF):
       self.scope.set_result(-2,(False,self.BOOL_DEF))
+    elif (return_type == self.FUNC_DEF):
+      self.scope.set_result(-2,([None,-1,{}],self.FUNC_DEF))
+    elif (return_type == self.OBJECT_DEF):
+      self.scope.set_result(-2,({},self.OBJECT_DEF))
     else:
       pass
 
@@ -490,7 +512,6 @@ class Interpreter(InterpreterBase):
           self.error(ErrorType.SYNTAX_ERROR, "Invalid Expression Syntax", self.instruction_poiner)
         operand1 = stack[-1]
         operand2 = stack[-2]
-
         if (operand1[self.TYPE] != operand2[self.TYPE]):
           self.error(
               ErrorType.TYPE_ERROR, "Operand types do not match", self.instruction_poiner)
@@ -509,6 +530,7 @@ class Interpreter(InterpreterBase):
 
       # Else push the operand on stack after parsing value
       else:
+        
         parsed_operand = self.parse_value_type(token)
         stack.append(parsed_operand)
     result = stack.pop()
@@ -547,10 +569,19 @@ class Interpreter(InterpreterBase):
       index = self.scope.find_scope_num(token)
       variable = self.scope.get_variable(index,token)
       return variable
+    elif ('.' in  token):
+      object_name = token.split('.')[0]
+      if (self.scope.find_scope_num(object_name) != -1):
+        index = self.scope.find_scope_num(object_name)
+        variable = self.scope.get_variable(index,token)
+        if(variable == None):
+          self.error(ErrorType.NAME_ERROR,"Not an object member",self.instruction_poiner)
+        return variable
     elif(self.functions.function_present(token)):
       return([token,self.functions.get_line_num(token),{}],self.FUNC_DEF)
     else:
-      return self.error(ErrorType.NAME_ERROR, "Invalid token, variable not found", self.instruction_poiner)
+      pass
+    return self.error(ErrorType.NAME_ERROR, "Invalid token, variable not found", self.instruction_poiner)
 
 
   # Reads the input and stores a tokenized version of the code

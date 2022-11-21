@@ -1,4 +1,4 @@
-from intbase import InterpreterBase
+from intbase import InterpreterBase, ErrorType
 
 class ScopeManager:
   def __init__(self):
@@ -42,6 +42,13 @@ class ScopeManager:
   # Get a varaible value_type given scope_index and variable_name
   def get_variable(self,scope_index,name):
     function_scope_stack = self.function_scopes[-1]
+    if('.' in  name):
+      object_name = name.split('.')[0]
+      object_variable = name.split('.')[1]
+      if( object_variable in function_scope_stack[scope_index][object_name][0]):
+        return function_scope_stack[scope_index][object_name][0][object_variable]
+      else:
+        return None
     return function_scope_stack[scope_index][name]
 
   # Set a variable valu_type given scope_index and variable_na
@@ -52,10 +59,15 @@ class ScopeManager:
     result = (value,vtype)
 
     function_scope_stack = self.function_scopes[-1]
-    if(len(function_scope_stack[scope_index][name]) == 3):
-      reference = function_scope_stack[scope_index][name][2]
-      result = result + (reference,)
-    function_scope_stack[scope_index][name] = result
+    if('.' in  name):
+      object_name = name.split('.')[0]
+      object_variable = name.split('.')[1]
+      function_scope_stack[scope_index][object_name][0][object_variable] = result
+    else:
+      if(len(function_scope_stack[scope_index][name]) == 3):
+        reference = function_scope_stack[scope_index][name][2]
+        result = result + (reference,)
+      function_scope_stack[scope_index][name] = result
   
 
 
@@ -79,6 +91,8 @@ class ScopeManager:
         top_scope["resultb"] = (value,vtype)
       case InterpreterBase.FUNC_DEF:
         top_scope["resultf"] = (value,vtype)
+      case InterpreterBase.OBJECT_DEF:
+        top_scope["resulto"] = (value,vtype)
 
   def set_referenced(self,variable_name,function_scope_stack_index=-1):
     current_function_scope_stack = self.function_scopes[function_scope_stack_index]
