@@ -3,6 +3,7 @@ from intbase import InterpreterBase
 class ScopeManager:
   def __init__(self):
     self.function_scopes = []
+    # self.lambda_scopes = []
     # self.reference_variables_stack = []
 
 
@@ -76,6 +77,8 @@ class ScopeManager:
         top_scope["resulti"] = (value,vtype)
       case InterpreterBase.BOOL_DEF:
         top_scope["resultb"] = (value,vtype)
+      case InterpreterBase.FUNC_DEF:
+        top_scope["resultf"] = (value,vtype)
 
   def set_referenced(self,variable_name,function_scope_stack_index=-1):
     current_function_scope_stack = self.function_scopes[function_scope_stack_index]
