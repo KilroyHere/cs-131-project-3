@@ -81,7 +81,7 @@ class Interpreter(InterpreterBase):
     self.functions.store_functions(self.program_code)
     # Set instruction pointer to first line of main
     self.instruction_poiner = self.functions.get_line_num(self.MAIN_FUNC)
-    self.functions.update_stacks(call_stack_elem=self.MAIN_FUNC, function_stack_elem= self.MAIN_FUNC)
+    self.functions.update_stacks(call_stack_elem=self.MAIN_FUNC, function_stack_elem= self.MAIN_FUNC, caller_variable=self.MAIN_FUNC)
     # Add main function scope and main's local scope
     self.scope.function_scopes.append([{}])
 
@@ -162,7 +162,6 @@ class Interpreter(InterpreterBase):
     for var_name in var_names:
       # Check if var not in current scope already
       if(self.scope.check_in_local_scope(var_name)):
-        print(self.scope.function_scopes[-1])
         self.error(ErrorType.NAME_ERROR,"Duplicate variable definitions within the same block", self.instruction_poiner)
       else:
         match var_type:
@@ -188,14 +187,20 @@ class Interpreter(InterpreterBase):
     # Evaluate expression
     evaluation_result = self.evaluate_expression(statement[2:])
     variable_name = statement[1]
-    
 
     if('.' in variable_name):
+      
       object_name = variable_name.split('.')[0]
+      if (object_name == self.THIS_DEF):
+        object_name = self.functions.function_caller_variable_stack[-1].split('.')[0]
+      variable_name = variable_name.replace(self.THIS_DEF,object_name)
+
       # Check if variable in any scope
       if(not self.scope.check_in_function_scope(object_name)):
-        self.error(ErrorType.NAME_ERROR, "Variable not found", self.instruction_poiner)
+        self.error(ErrorType.NAME_ERROR, "Object not found", self.instruction_poiner)
       index = self.scope.find_scope_num(variable_name.split('.')[0])
+      if(self.scope.get_variable(index,object_name)[self.TYPE] != self.OBJECT_DEF):
+        self.error(ErrorType.TYPE_ERROR,"Not an Object type",self.instruction_poiner)
       # Set variable
       self.scope.set_variable(index,variable_name,evaluation_result)
     else:
@@ -249,13 +254,20 @@ class Interpreter(InterpreterBase):
       is_lambda = False
       if (not self.functions.function_present(function_name)):
         # Check in function variable
-        if( self.scope.find_scope_num(function_name) != -1):
+        if( self.scope.find_scope_num(function_name.split('.')[0]) != -1):
             index = self.scope.find_scope_num(function_name)
             function_def = self.scope.get_variable(index,function_name)
-            function_name = function_def[self.VALUE][0]
+            
+            if(function_def == None):
+              self.error(ErrorType.NAME_ERROR, f"Object method {function_name} not defined ", self.instruction_poiner)
+            
+            if(function_def[self.TYPE] != self.FUNC_DEF):
+              self.error(ErrorType.TYPE_ERROR,"Not a function",self.instruction_poiner)
+             
             if(len(function_def[self.VALUE][2]) > 0):
               is_lambda = True
             # For undefined function names, there's a dummy variable
+            function_name = function_def[self.VALUE][0]
             if(function_name == None):
               self.instruction_poiner += 1
               return
@@ -275,10 +287,15 @@ class Interpreter(InterpreterBase):
       # Adding new function_scope for function called
       if(is_lambda):
         self.scope.function_scopes.append(copy.deepcopy(function_def[self.VALUE][2]))
+      elif('.' in statement[1]):
+        object_name = statement[1].split('.')[0]
+        object_def = self.scope.get_variable(index,object_name)
+        self.scope.function_scopes.append([{object_name:object_def}])
+
       else:
         self.scope.function_scopes.append([{}])
+      
       for index in range(len(passed_parameters)):
-        
         # Parsing type of passed parameter
         passed_parameter = passed_parameters[index]
         passed_parameter_name = passed_parameter_names[index]
@@ -305,7 +322,7 @@ class Interpreter(InterpreterBase):
           self.scope.add_to_local_scope(formal_parameter_name,(passed_parameter[self.VALUE],passed_parameter[self.TYPE]))
 
       # Add next line to call stack and jump to called function
-      self.functions.update_stacks(call_stack_elem=self.instruction_poiner + 1, function_stack_elem=function_name)
+      self.functions.update_stacks(call_stack_elem=self.instruction_poiner + 1, function_stack_elem=function_name, caller_variable= statement[1])
       # Go to the next line of func or lambda definition
       self.instruction_poiner = self.functions.get_line_num(function_name)+1
 
@@ -419,10 +436,15 @@ class Interpreter(InterpreterBase):
         (bool): True if program should continue, False to exit
     """
     # Setting results
+    required_return_type = self.functions.get_return_type(self.functions.get_current_function())
+    
     if (len(self.functions.call_stack) == 1):
+      if(len(statement) > 1):
+        if(required_return_type == self.VOID_DEF):
+          self.error(ErrorType.TYPE_ERROR,"Wrong return type", self.instruction_poiner)
       return False
 
-    required_return_type = self.functions.get_return_type(self.functions.get_current_function())
+    
     if (len(statement) > 1):
       return_value_type = self.evaluate_expression(statement[1:])
       if(return_value_type[self.TYPE] != required_return_type):
@@ -530,7 +552,6 @@ class Interpreter(InterpreterBase):
 
       # Else push the operand on stack after parsing value
       else:
-        
         parsed_operand = self.parse_value_type(token)
         stack.append(parsed_operand)
     result = stack.pop()
@@ -581,6 +602,7 @@ class Interpreter(InterpreterBase):
       return([token,self.functions.get_line_num(token),{}],self.FUNC_DEF)
     else:
       pass
+    
     return self.error(ErrorType.NAME_ERROR, "Invalid token, variable not found", self.instruction_poiner)
 
 

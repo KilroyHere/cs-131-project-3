@@ -1,4 +1,17 @@
+func foo func
+  return bar 
+endfunc
+
+func bar x:int int
+  return + x 5
+endfunc
+
 func main void
-  var int x
-  assign x.a 5
+ var object a
+ assign a.x 10
+ assign a.f foo
+ funccall a.f
+ assign a.r resultf
+ funccall a.r a.y   # a.y does not exist
+ funccall print resulti 
 endfunc

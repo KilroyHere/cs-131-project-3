@@ -7,6 +7,7 @@ class FunctionManager:
     self.function_defs = {}
     self.call_stack = []
     self.function_stack = []
+    self.function_caller_variable_stack = []
     self.current_function = None
 
   def store_functions(self,tokenized_program):
@@ -70,11 +71,13 @@ class FunctionManager:
     else:
       return True
   
-  def update_stacks(self,call_stack_elem, function_stack_elem):
+  def update_stacks(self,call_stack_elem, function_stack_elem, caller_variable):
     self.call_stack.append(call_stack_elem)
     self.function_stack.append(function_stack_elem)
+    self.function_caller_variable_stack.append(caller_variable)
   
   def pop_stack(self):
     call_return = self.call_stack.pop()
     self.function_stack.pop()
+    self.function_caller_variable_stack.pop()
     return call_return
